@@ -1,0 +1,6 @@
+python-lambda
+requests
+bs4
+re
+json
+boto3

@@ -1,0 +1,104 @@
+# -*- coding: utf-8 -*-
+import requests
+import json
+import re
+import boto3
+import xml.etree.ElementTree as ET
+from bs4 import BeautifulSoup
+
+BOOLEAN_FIELDS = ['panel_arrangement', 'multi_agency_access']
+DIV_CONTACT_P = 'div.col-sm-4 div.pc div.box.boxB.boxY1 div.contact p'
+INNER_DIV_LIST_DESC = 'div.col-sm-8 div.box.boxW.listInner div.list-desc'
+CONTAINER_DIV_ROW = 'html body div div.pushmenu-push div.main div.container div.row'
+RSS_ENDPOINT = "https://www.tenders.gov.au/public_data/rss/rss.xml"
+
+s3 = boto3.resource('s3')
+
+
+def handler(event, context):
+    links = get_links()
+    entries = get_entries(links)
+    if len(entries) > 0:
+        s3.Object('trade-leads', 'australia.json').put(Body=json.dumps(entries), ContentType='application/json')
+        return "Uploaded australia.json file with %i trade leads" % len(entries)
+    else:
+        return "No entries loaded from %s so there is no JSON file to upload" % RSS_ENDPOINT
+
+
+def get_entries(links):
+    entries = [get_entry(tender_url) for tender_url in links]
+    return entries
+
+
+def get_entry(tender_url):
+    print "Fetching %s" % tender_url
+    soup = get_soup(tender_url)
+    row = soup.select(CONTAINER_DIV_ROW)[0]
+    contact = get_contact(row)
+    main_fields = row.select(INNER_DIV_LIST_DESC)
+    tuples = [list_item.text.strip().splitlines() for list_item in main_fields]
+    two_tuples = [[get_key(tuple[0]), get_value(tuple[1:])] for tuple in tuples if len(tuple) > 1]
+    dict = {tuple[0]: tuple[1] for tuple in two_tuples if field_value_seems_reasonable(tuple[1])}
+    booleanize(dict)
+    entry = {"tender_url": tender_url,
+             "uuid": tender_url[tender_url.find('UUID=') + 5:],
+             "title": row.select('.lead')[0].text}
+    dict.update(entry)
+    dict.update(contact)
+    return dict
+
+
+def booleanize(dict):
+    for key in BOOLEAN_FIELDS:
+        dict[key] = to_boolean(dict[key])
+    return dict
+
+
+def to_boolean(boolean_string):
+    return True if re.match('yes', boolean_string, re.IGNORECASE) else False
+
+
+def get_contact(row):
+    contact = {}
+    contact_fields = row.select(DIV_CONTACT_P)
+    contact_officer = contact_fields[1].text
+    if contact_officer:
+        contact['contact_officer'] = contact_officer
+    phone = contact_fields[2].text.split(':')[1].strip()
+    if phone_seems_reasonable(phone):
+        contact['phone'] = phone
+    return contact
+
+
+def phone_seems_reasonable(phone):
+    return re.search('[1-9]', phone)
+
+
+def field_value_seems_reasonable(value):
+    return value and not (value == 'Nil')
+
+
+def get_key(key_string):
+    return '_'.join(re.sub('[^a-z ]', '', key_string.lower()).split())
+
+
+def get_value(values):
+    value = ' '.join(values).strip()
+    return value
+
+
+def get_links():
+    print "Fetching RSS feed of links..."
+    response = requests.get(RSS_ENDPOINT)
+    root = ET.fromstring(response.text.encode('utf-8'))
+    items = root.findall('./channel/item/link')
+    links = [item.text for item in items]
+    print "Found %i links" % len(links)
+    return links
+
+
+def get_soup(link):
+    response = requests.get(link)
+    html = response.text
+    soup = BeautifulSoup(html, "html.parser")
+    return soup
