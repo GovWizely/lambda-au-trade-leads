@@ -7,7 +7,6 @@ import xml.etree.ElementTree as ET
 import datetime as dt
 from bs4 import BeautifulSoup
 
-BOOLEAN_FIELDS = ['panel_arrangement', 'multi_agency_access']
 DIV_CONTACT_P = 'div.col-sm-4 div.pc div.box.boxB.boxY1 div.contact p'
 DIV_CONTACT_LONG_P = DIV_CONTACT_P.replace('contact', 'contact-long')
 INNER_DIV_LIST_DESC = 'div.col-sm-8 div.box.boxW.listInner div.list-desc'
@@ -40,7 +39,6 @@ def get_entry(item):
     tuples = [list_item.text.strip().splitlines() for list_item in main_fields]
     two_tuples = [[get_key(tuple[0]), get_value(tuple[1:])] for tuple in tuples if len(tuple) > 1]
     dict = {tuple[0]: tuple[1] for tuple in two_tuples if field_value_seems_reasonable(tuple[1])}
-    booleanize(dict)
     dict['close_date_time'] = parse_close_date_time(dict['close_date_time'])
     entry = {"tender_url": tender_url,
              "publish_date": item['pubDate'],
@@ -53,16 +51,6 @@ def get_entry(item):
 
 def parse_close_date_time(close_date_time):
     return dt.datetime.strptime(close_date_time, CLOSE_DATE_TIME_FORMAT).strftime("%Y-%m-%dT%H:%M:%S+10:00")
-
-
-def booleanize(dict):
-    for key in BOOLEAN_FIELDS:
-        if key in dict: dict[key] = to_boolean(dict[key])
-    return dict
-
-
-def to_boolean(boolean_string):
-    return True if re.match('yes', boolean_string, re.IGNORECASE) else False
 
 
 def get_contact(row):
