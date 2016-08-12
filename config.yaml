@@ -12,4 +12,4 @@ description: Fetches trade leads links, scrapes data for each link from HTML pag
 
 # dist_directory: dist
 timeout: 300
-# memory_size: 512
+memory_size: 128
