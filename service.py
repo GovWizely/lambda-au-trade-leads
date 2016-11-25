@@ -21,7 +21,7 @@ s3 = boto3.resource('s3')
 
 def handler(event, context):
     items = get_items()
-    entries = [get_entry(item) for item in items]
+    entries = filter(None, [get_entry(item) for item in items])
     if len(entries) > 0:
         s3.Object('trade-leads', 'australia.json').put(Body=json.dumps(entries), ContentType='application/json')
         return "Uploaded australia.json file with %i trade leads" % len(entries)
@@ -33,6 +33,8 @@ def get_entry(item):
     tender_url = item['link']
     print "Fetching %s" % tender_url
     soup = get_soup(tender_url)
+    if not soup:
+        return None
     row = soup.select(CONTAINER_DIV_ROW)[0]
     contact = get_contact(row)
     main_fields = row.select(INNER_DIV_LIST_DESC)
@@ -110,7 +112,10 @@ def get_items():
 
 
 def get_soup(link):
-    response = requests.get(link)
+    response = requests.get(link, allow_redirects=False)
+    if response.status_code != 200:
+        print("Got status code {} from response for link {}".format(response.status_code, link))
+        return None
     html = response.text
     soup = BeautifulSoup(html, "html.parser")
     return soup
