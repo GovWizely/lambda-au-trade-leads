@@ -1,7 +1,4 @@
-python-lambda
-requests
-bs4
-re
-json
-boto3
-datetime
+beautifulsoup4==4.8.2
+boto3==1.11.9
+python-lambda==3.2.6
+requests==2.22.0
