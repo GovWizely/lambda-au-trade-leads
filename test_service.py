@@ -1,6 +1,6 @@
 import vcr
 
-from service import get_trade_lead_links, get_soup
+from service import get_soup, get_trade_lead_links
 
 
 @vcr.use_cassette()
