@@ -1,5 +1,6 @@
 [![CircleCI](https://circleci.com/gh/GovWizely/lambda-au-trade-leads/tree/master.svg?style=svg)](https://circleci.com/gh/GovWizely/lambda-au-trade-leads/tree/master)
 [![Maintainability](https://api.codeclimate.com/v1/badges/d783738b80f2c6fc6703/maintainability)](https://codeclimate.com/github/GovWizely/lambda-au-trade-leads/maintainability)
+[![Dependabot Status](https://api.dependabot.com/badges/status?host=github&repo=GovWizely/lambda-au-trade-leads)](https://dependabot.com)
 
 # Australia Trade Leads Lambda
 
