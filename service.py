@@ -3,34 +3,43 @@
 document, and stores it in S3 """
 import datetime as dt
 import json
+import logging
 import re
 import xml.etree.ElementTree as ET
 
 import boto3
 import requests
+from botocore.exceptions import ClientError
 from bs4 import BeautifulSoup
 
 KEY = "australia.json"
 BUCKET = "trade-leads"
+JSON = "application/json"
 DIV_CONTACT_P = "div.col-sm-4 div.pc div.box.boxB.boxY1 div.contact p"
 DIV_CONTACT_LONG_P = DIV_CONTACT_P.replace("contact", "contact-long")
 INNER_DIV_LIST_DESC = "div.col-sm-8 div.box.boxW.listInner div.list-desc"
-CONTAINER_DIV_ROW = "html body div div.pushmenu-push div.main div.container div.row"
+MAIN_CONTENT = "html body div.wrapper div.pushmenu-push main#mainContent.main"
+CONTAINER_DIV_ROW = f"{MAIN_CONTENT} div.container div.row"
 RSS_ENDPOINT = "https://www.tenders.gov.au/public_data/rss/rss.xml"
 INPUT_FORMAT = "%d-%b-%Y %I:%M %p (ACT Local Time) Show close time for other time zones"
 OUTPUT_FORMAT = "%Y-%m-%dT%H:%M:%S+10:00"
 LONG_CONTACT_NAME_INDEX = 0
 REGULAR_CONTACT_NAME_INDEX = 1
-S3_CLIENT = boto3.resource("s3")
+S3_CLIENT = boto3.client("s3")
 
 
 def handler(event, context):
-    entries = list(get_trade_lead_links())
-    if entries:
-        S3_CLIENT.Object(BUCKET, KEY).put(Body=json.dumps(entries), ContentType="application/json")
-        return f"Uploaded {KEY} to {BUCKET} bucket with {len(entries)} trade leads"
-    else:
-        return f"No entries loaded from {RSS_ENDPOINT} so there is no JSON file to upload"
+    response = True
+    try:
+        entries = list(get_trade_lead_links())
+        S3_CLIENT.put_object(
+            Bucket=BUCKET, Key=KEY, Body=json.dumps(entries), ContentType=JSON
+        )
+        print(f"✅ Uploaded {KEY} file with {len(entries)} locations")
+    except (ClientError, ET.ParseError) as e:
+        logging.error(e)
+        response = False
+    return response
 
 
 def get_trade_lead_links():
@@ -40,7 +49,10 @@ def get_trade_lead_links():
     items = root.findall("./channel/item")
     print(f"Found {len(items)} trade lead links")
     for item in items:
-        trade_lead_item = {"link": item.find("link").text, "pubDate": item.find("pubDate").text}
+        trade_lead_item = {
+            "link": item.find("link").text,
+            "pubDate": item.find("pubDate").text,
+        }
         entry = get_entry(trade_lead_item)
         if entry:
             yield entry
@@ -54,7 +66,11 @@ def get_entry(trade_lead_item):
         row = soup.select(CONTAINER_DIV_ROW)[0]
         main_fields = row.select(INNER_DIV_LIST_DESC)
         tuples = [list_item.text.strip().splitlines() for list_item in main_fields]
-        kv_dict = {get_key(tuple[0]): get_value(tuple[1:]) for tuple in tuples if len(tuple) > 1}
+        kv_dict = {
+            get_key(tuple[0]): get_value(tuple[1:])
+            for tuple in tuples
+            if len(tuple) > 1
+        }
         entry = {k: v for k, v in kv_dict.items() if field_value_seems_reasonable(v)}
         uuid_index = tender_url.find("UUID=") + 5
         misc_fields = {
@@ -87,13 +103,15 @@ def get_contact(row):
         get_contact_info(p_entry) for p_entry in contact_fields[remaining_fields_index:]
     ]
     phone_email_etc_hash = {
-        contact_tuple[0]: contact_tuple[1] for contact_tuple in phone_email_etc_list
+        contact_tuple[0]: contact_tuple[1]
+        for contact_tuple in phone_email_etc_list
+        if len(contact_tuple) > 1
     }
-    phone = phone_email_etc_hash["P"]
+    phone = phone_email_etc_hash["Phone"]
     if phone_seems_reasonable(phone):
         contact["phone"] = phone
 
-    email = phone_email_etc_hash["E"]
+    email = phone_email_etc_hash["Email Address"]
     if email:
         contact["email"] = email
 
