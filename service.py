@@ -18,8 +18,13 @@ JSON = "application/json"
 DIV_CONTACT_P = "div.col-sm-4 div.pc div.box.boxB.boxY1 div.contact p"
 DIV_CONTACT_LONG_P = DIV_CONTACT_P.replace("contact", "contact-long")
 INNER_DIV_LIST_DESC = "div.col-sm-8 div.box.boxW.listInner div.list-desc"
+
 MAIN_CONTENT = "html body div.wrapper div.pushmenu-push main#mainContent.main"
+MAIN_CONTENT_v2 = "html body div.wrapper div.pushmenu-push div.main "
+
 CONTAINER_DIV_ROW = f"{MAIN_CONTENT} div.container div.row"
+CONTAINER_DIV_ROW_v2 = f"{MAIN_CONTENT_v2} div.container div.row"
+
 RSS_ENDPOINT = "https://www.tenders.gov.au/public_data/rss/rss.xml"
 INPUT_FORMAT = "%d-%b-%Y %I:%M %p (ACT Local Time) Show close time for other time zones"
 OUTPUT_FORMAT = "%Y-%m-%dT%H:%M:%S+10:00"
@@ -63,7 +68,10 @@ def get_entry(trade_lead_item):
     print(f"Fetching {tender_url}")
     soup = get_soup(tender_url)
     if soup:
-        row = soup.select(CONTAINER_DIV_ROW)[0]
+        try:
+            row = soup.select(CONTAINER_DIV_ROW)[0]
+        except IndexError:
+            row = soup.select(CONTAINER_DIV_ROW_v2)[0]
         main_fields = row.select(INNER_DIV_LIST_DESC)
         tuples = [list_item.text.strip().splitlines() for list_item in main_fields]
         kv_dict = {
@@ -107,11 +115,17 @@ def get_contact(row):
         for contact_tuple in phone_email_etc_list
         if len(contact_tuple) > 1
     }
-    phone = phone_email_etc_hash["Phone"]
+    try:
+        phone = phone_email_etc_hash["Phone"]
+    except KeyError:
+        phone = phone_email_etc_hash["P"]
     if phone_seems_reasonable(phone):
         contact["phone"] = phone
 
-    email = phone_email_etc_hash["Email Address"]
+    try:
+        email = phone_email_etc_hash["Email Address"]
+    except KeyError:
+        email = phone_email_etc_hash["E"]
     if email:
         contact["email"] = email
 
