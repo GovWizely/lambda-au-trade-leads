@@ -11,25 +11,28 @@ import boto3
 import requests
 from botocore.exceptions import ClientError
 from bs4 import BeautifulSoup
+from lxml import etree
+
 
 KEY = "australia.json"
 BUCKET = "trade-leads"
 JSON = "application/json"
-DIV_CONTACT_P = "div.col-sm-4 div.pc div.box.boxB.boxY1 div.contact p"
-DIV_CONTACT_LONG_P = DIV_CONTACT_P.replace("contact", "contact-long")
-INNER_DIV_LIST_DESC = "div.col-sm-8 div.box.boxW.listInner div.list-desc"
 
-MAIN_CONTENT = "html body div.wrapper div.pushmenu-push main#mainContent.main"
+MAIN_CONTENT = "html body div.wrapper div.pushmenu-push main#mainContent"
 MAIN_CONTENT_v2 = "html body div.wrapper div.pushmenu-push div.main "
 
 CONTAINER_DIV_ROW = f"{MAIN_CONTENT} div.container div.row"
 CONTAINER_DIV_ROW_v2 = f"{MAIN_CONTENT_v2} div.container div.row"
+INNER_DIV_LIST_DESC = "div.col-sm-8 div.box.boxW.listInner div.list-desc"
+
+CONTACT_ROW_SELECTOR = "div.col-sm-4 div.pc div.box.boxB.boxY1 div"
+CONTACT_OFFICER_SELECTOR = "p.contact-heading + p"
+EMAIL_SELECTOR = "p a.email"
+PHONE_SELECTOR = "//p[span[label[contains(text(),'Phone')]]]"
 
 RSS_ENDPOINT = "https://www.tenders.gov.au/public_data/rss/rss.xml"
 INPUT_FORMAT = "%d-%b-%Y %I:%M %p (ACT Local Time) Show close time for other time zones"
 OUTPUT_FORMAT = "%Y-%m-%dT%H:%M:%S+10:00"
-LONG_CONTACT_NAME_INDEX = 0
-REGULAR_CONTACT_NAME_INDEX = 1
 S3_CLIENT = boto3.client("s3")
 
 
@@ -100,49 +103,29 @@ def parse_close_date_time(close_date_time):
 
 def get_contact(row):
     contact = {}
-    contact_fields, contact_name_index = parse_contact_formats(row)
+    contact_row = row.select(CONTACT_ROW_SELECTOR)[0]
 
-    contact_officer = contact_fields[contact_name_index].text
-    if contact_officer:
-        contact["contact_officer"] = contact_officer
+    contact_officer_field = contact_row.select(CONTACT_OFFICER_SELECTOR)
+    if len(contact_officer_field) > 0:
+        contact["contact_officer"] = contact_officer_field[0].text
 
-    remaining_fields_index = contact_name_index + 1
-    phone_email_etc_list = [
-        get_contact_info(p_entry) for p_entry in contact_fields[remaining_fields_index:]
-    ]
-    phone_email_etc_hash = {
-        contact_tuple[0]: contact_tuple[1]
-        for contact_tuple in phone_email_etc_list
-        if len(contact_tuple) > 1
-    }
-    try:
-        phone = phone_email_etc_hash["Phone"]
-    except KeyError:
-        phone = phone_email_etc_hash["P"]
-    if phone_seems_reasonable(phone):
-        contact["phone"] = phone
+    email_field = contact_row.select(EMAIL_SELECTOR)
+    if len(email_field) > 0:
+        contact["email"] = email_field[0].text
 
-    try:
-        email = phone_email_etc_hash["Email Address"]
-    except KeyError:
-        email = phone_email_etc_hash["E"]
-    if email:
-        contact["email"] = email
+    contact_row_etree = etree.HTML(str(contact_row))
+    phone_field = contact_row_etree.xpath(PHONE_SELECTOR)
+    if len(phone_field) > 0:
+        all_phone_text = phone_field[0].xpath("string()").strip()
+        phone = re.sub("Phone:", "", all_phone_text).strip()
+        if phone_seems_reasonable(phone):
+            contact["phone"] = phone
 
     return contact
 
 
 def get_contact_info(p_entry):
     return "".join(p_entry.stripped_strings).split(":")
-
-
-def parse_contact_formats(row):
-    contact_fields = row.select(DIV_CONTACT_P)
-    contact_name_index = REGULAR_CONTACT_NAME_INDEX
-    if len(contact_fields) == 0:
-        contact_fields = row.select(DIV_CONTACT_LONG_P)
-        contact_name_index = LONG_CONTACT_NAME_INDEX
-    return contact_fields, contact_name_index
 
 
 def phone_seems_reasonable(phone):
