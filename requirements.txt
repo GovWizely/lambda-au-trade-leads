@@ -1,5 +1,5 @@
 beautifulsoup4==4.9.3
-boto3==1.17.73
+boto3==1.17.93
 lxml==4.6.3
 python-lambda==11.8.0
 requests==2.25.1
